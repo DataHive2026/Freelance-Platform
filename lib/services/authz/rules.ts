@@ -14,6 +14,10 @@ export interface AuthzContext {
   isMember: boolean;     // active team_members row on the project
   isLead: boolean;       // is_lead = true on an active team_members row
   isParty: boolean;      // is a named party on a dispute
+  isAssignee: boolean;   // is the assigned_expert_id on a task (compares
+                         // expert_profiles.id, not users.id — kept as its
+                         // own boolean rather than jammed into `resource`
+                         // to avoid comparing two different id spaces)
   // Resource state, loaded lazily per-action as needed.
   resource?: Record<string, unknown>;
 }
@@ -29,11 +33,15 @@ export interface Rule {
 export const RULES: Rule[] = [
   // --- Projects ---------------------------------------------------------
   { action: "project:create", allowedRoles: ["client"], scope: "none" },
+  { action: "project:post", allowedRoles: ["client"], scope: "owner",
+    condition: (ctx) => ctx.resource?.status === "DRAFT" },
   { action: "project:edit_details", allowedRoles: ["client", "admin"], scope: "owner",
     condition: (ctx) => ["DRAFT", "POSTED"].includes(String(ctx.resource?.status)) },
   { action: "project:view", allowedRoles: ["client", "expert", "admin"], scope: "none" },
   { action: "project:cancel", allowedRoles: ["client", "admin"], scope: "owner",
     condition: (ctx) => ["DRAFT", "POSTED", "REVIEWING", "TEAM_FORMING"].includes(String(ctx.resource?.status)) },
+  { action: "project:complete", allowedRoles: ["client"], scope: "owner",
+    condition: (ctx) => ctx.resource?.status === "DELIVERABLE_REVIEW" },
   { action: "project:fund", allowedRoles: ["client"], scope: "owner",
     condition: (ctx) => ctx.resource?.status === "TEAM_CONFIRMED" },
 
@@ -52,16 +60,18 @@ export const RULES: Rule[] = [
   // --- Tasks & milestones --------------------------------------------------
   { action: "task:create", allowedRoles: ["client", "expert", "admin"], scope: "owner",
     condition: (ctx) => ctx.actorRole === "client" || ctx.isLead || ctx.actorRole === "admin" },
+  { action: "task:view", allowedRoles: ["client", "expert", "admin"], scope: "member" },
   { action: "task:update_status", allowedRoles: ["client", "expert", "admin"], scope: "member",
-    condition: (ctx) => ctx.actorRole === "client" || ctx.actorRole === "admin" || ctx.isLead || ctx.resource?.assigned_expert_id === ctx.userId },
+    condition: (ctx) => ctx.actorRole === "client" || ctx.actorRole === "admin" || ctx.isLead || ctx.isAssignee },
   { action: "task:comment", allowedRoles: ["client", "expert", "admin"], scope: "member" },
   { action: "milestone:create", allowedRoles: ["client", "expert", "admin"], scope: "owner",
     condition: (ctx) => ctx.actorRole === "client" || ctx.isLead || ctx.actorRole === "admin" },
+  { action: "milestone:view", allowedRoles: ["client", "expert", "admin"], scope: "member" },
   { action: "milestone:submit_deliverable", allowedRoles: ["expert"], scope: "member" },
   { action: "milestone:approve", allowedRoles: ["client"], scope: "owner",
-    condition: (ctx) => ctx.resource?.status === "SUBMITTED" },
+    condition: (ctx) => ctx.resource?.status === "submitted" },
   { action: "milestone:request_revision", allowedRoles: ["client"], scope: "owner",
-    condition: (ctx) => ctx.resource?.status === "SUBMITTED" },
+    condition: (ctx) => ctx.resource?.status === "submitted" },
 
   // --- Files, messages, meetings -------------------------------------------
   { action: "file:upload", allowedRoles: ["client", "expert", "admin"], scope: "member" },
@@ -71,8 +81,10 @@ export const RULES: Rule[] = [
   { action: "message:send", allowedRoles: ["client", "expert"], scope: "member" },
   { action: "message:read", allowedRoles: ["client", "expert", "admin"], scope: "member" },
   { action: "meeting:schedule", allowedRoles: ["client", "expert"], scope: "member" },
+  { action: "meeting:view", allowedRoles: ["client", "expert", "admin"], scope: "member" },
   { action: "meeting:cancel", allowedRoles: ["client", "expert", "admin"], scope: "member",
     condition: (ctx) => ctx.actorRole === "admin" || ctx.resource?.created_by === ctx.userId },
+  { action: "meeting:respond_rsvp", allowedRoles: ["client", "expert"], scope: "member" },
 
   // --- Payments -------------------------------------------------------------
   { action: "payment:fund_project", allowedRoles: ["client"], scope: "owner" },
@@ -92,13 +104,14 @@ export const RULES: Rule[] = [
   { action: "verification:submit", allowedRoles: ["expert"], scope: "self" },
   { action: "verification:decide", allowedRoles: ["admin"], scope: "none" },
   { action: "review:submit", allowedRoles: ["client", "expert"], scope: "member",
-    condition: (ctx) => ctx.resource?.project_status === "COMPLETED" },
+    condition: (ctx) => ctx.resource?.status === "COMPLETED" },
   { action: "review:remove", allowedRoles: ["admin"], scope: "none" },
 
   // --- Admin & platform config -------------------------------------------------
   { action: "admin:manage_users", allowedRoles: ["admin"], scope: "none" },
   { action: "admin:manage_categories", allowedRoles: ["admin"], scope: "none" },
   { action: "admin:manage_commission_rules", allowedRoles: ["admin"], scope: "none" },
+  { action: "admin:manage_disputes", allowedRoles: ["admin"], scope: "none" },
   { action: "admin:view_reports", allowedRoles: ["admin"], scope: "none" },
   { action: "admin:view_audit_log", allowedRoles: ["admin"], scope: "none" },
 ];

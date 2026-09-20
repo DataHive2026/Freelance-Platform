@@ -19,10 +19,12 @@ export async function createProjectAction(_prevState: NewProjectState, formData:
   const budgetMinRaw = formData.get("budgetMin");
   const budgetMaxRaw = formData.get("budgetMax");
   const deadlineRaw = formData.get("deadline");
+  const categoryIdRaw = formData.get("categoryId");
 
   const parsed = createProjectSchema.safeParse({
     title: formData.get("title"),
     description: formData.get("description"),
+    categoryId: categoryIdRaw || undefined,
     budgetMin: budgetMinRaw ? Number(budgetMinRaw) : undefined,
     budgetMax: budgetMaxRaw ? Number(budgetMaxRaw) : undefined,
     deadline: deadlineRaw || undefined,
@@ -38,11 +40,12 @@ export async function createProjectAction(_prevState: NewProjectState, formData:
       clientId: profile.id,
       title: parsed.data.title,
       description: parsed.data.description,
+      categoryId: parsed.data.categoryId,
       budgetMin: parsed.data.budgetMin,
       budgetMax: parsed.data.budgetMax,
       deadline: parsed.data.deadline,
     });
-    redirect(`/client/projects/${project.id}`);
+    redirect(`/projects/${project.id}`);
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Failed to create project" };
   }

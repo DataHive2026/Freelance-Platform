@@ -68,7 +68,7 @@ export default async function ClientDashboardPage() {
           {projects.map((p) => (
             <Link
               key={p.id}
-              href={`/client/projects/${p.id}`}
+              href={`/projects/${p.id}`}
               style={{ display: "block", border: "1px solid #E2E4EA", borderRadius: 16, padding: 20, textDecoration: "none", color: "inherit" }}
             >
               <div style={{ fontSize: 11, textTransform: "uppercase", color: "#3454D1", marginBottom: 6 }}>

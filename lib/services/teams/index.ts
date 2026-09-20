@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { can } from "@/lib/services/authz";
+import { systemTransition } from "@/lib/services/projects";
 
 export class TeamServiceError extends Error {}
 
@@ -194,13 +195,10 @@ export async function listMyInvitations(userId: string) {
 }
 
 /**
- * TEAM_FORMING → TEAM_CONFIRMED is meant to fire automatically once every
- * required role is filled (Phase 0's state machine, transition table in
- * permission-matrix.md §3.1.1: "System (automatic)"). This is a first-pass
- * implementation of that trigger — it checks whether all seats are filled
- * with active members, and if so calls ProjectService.
+ * TEAM_FORMING → TEAM_CONFIRMED fires automatically once every required
+ * role is filled (permission-matrix.md §3.1.1: "System (automatic)").
  *
- * Deliberately NOT wired to project_roles.seats_available yet (that
+ * Deliberately NOT yet wired to project_roles.seats_available (that
  * requires joining seats-per-role vs. accepted-members-per-role, which
  * needs project_roles.id on every team_members row consistently populated
  * — left as a TODO once the role-assignment UI in Phase 4b exists). For
@@ -209,6 +207,13 @@ export async function listMyInvitations(userId: string) {
  */
 async function maybeConfirmTeam(teamId: string) {
   const supabase = await createSupabaseServerClient();
+  const { data: team } = await supabase
+    .from("project_teams")
+    .select("id, project_id, status")
+    .eq("id", teamId)
+    .single();
+  if (!team) return;
+
   const { data: members } = await supabase
     .from("team_members")
     .select("status")
@@ -218,10 +223,21 @@ async function maybeConfirmTeam(teamId: string) {
   const hasPending = members.some((m) => m.status === "invited");
   const hasActive = members.some((m) => m.status === "active");
 
-  if (hasActive && !hasPending) {
+  if (hasActive && !hasPending && team.status !== "confirmed") {
     await supabase.from("project_teams").update({ status: "confirmed" }).eq("id", teamId);
-    // NOTE: does not yet call ProjectService.transitionStatus() to move
-    // the project itself to TEAM_CONFIRMED — that needs the acting
-    // system identity threaded through, left for the next pass.
+
+    // Was a TODO through Phase 5: the project_teams row flipped to
+    // 'confirmed' but the PROJECT's own status never moved off
+    // TEAM_FORMING. Fixed — this is exactly what systemTransition()
+    // exists for (see projects/index.ts): an already-authorized
+    // consequence of accepting an invitation, not a new human action.
+    try {
+      await systemTransition(team.project_id, "TEAM_CONFIRMED", "All team seats filled and accepted");
+    } catch {
+      // If the project isn't in TEAM_FORMING (e.g. someone accepted an
+      // invite on an already-confirmed team), systemTransition's own
+      // allow-list check throws — that's fine, this is a best-effort
+      // side effect, not the primary action of accepting an invitation.
+    }
   }
 }
